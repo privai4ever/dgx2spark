@@ -65,10 +65,10 @@ See [METHODOLOGY.md](METHODOLOGY.md) for detailed technical comparison.
 - **Configuration**: **Independent single-node clusters**
   - Each node runs `--tensor-parallel-size 8` (all 8 GPUs on that node)
   - No cross-node tensor parallelism
-  - Both nodes listen on same port 30000 (requires external load balancer)
+  - Both nodes listen on same port 8000 (requires external load balancer)
 - **API Endpoints**:
-  - DGX1: `http://10.0.0.1:30000/v1/chat/completions`
-  - DGX2: `http://10.0.0.2:30000/v1/chat/completions`
+  - DGX1: `http://10.0.0.1:8000/v1/chat/completions`
+  - DGX2: `http://10.0.0.2:8000/v1/chat/completions`
 - **Purpose**: Test if Spark could route requests to different nodes (model replication, not sharding)
 - **Issue**: Each node loaded full model copy independently (8 GPUs each), not tensor-parallel across 16 GPUs
 - **Conclusion**: Not true multi-node tensor parallelism; would need model pipelining or separate replicas
@@ -128,7 +128,7 @@ See [METHODOLOGY.md](METHODOLOGY.md) for detailed technical comparison.
   - Both nodes run `trtllm-serve` with distributed environment
   - `--tensor_parallel_size 16` (total across cluster: 2 nodes × 8 GPUs)
   - `--nnodes 2 --node-rank 0/1 --master-addr 10.0.0.1 --master-port 29500`
-  - DGX1 exposes API on port 30000; DGX2 acts as compute worker (no separate API)
+  - DGX1 exposes API on port 8000; DGX2 acts as compute worker (no separate API)
 - **Container Flags**:
   - `--gpus all --network host --ipc host` (shared IPC namespace)
   - `--ulimit memlock=-1 --ulimit stack=67108864` (memory locking)
@@ -256,7 +256,7 @@ See [METHODOLOGY.md](METHODOLOGY.md) for detailed technical comparison.
 ./start_trtllm_multinode.sh
 
 # 3. Test API
-curl http://10.0.0.1:30000/v1/chat/completions \
+curl http://10.0.0.1:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"Qwen/Qwen2.5-Coder-7B-Instruct","messages":[{"role":"user","content":"Hello!"}]}'
 
@@ -281,7 +281,7 @@ Common across all scripts:
 | `MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct` | HuggingFace model identifier |
 | `HUGGINGFACE_TOKEN` | (empty) | HF authentication token (set via env) |
 | `HF_CACHE` | `/home/ss/.cache/huggingface` | HuggingFace cache directory |
-| `PORT` | `30000` | API server port (DGX1 only) |
+| `PORT` | `8000` | API server port (DGX1 only) |
 | `TENSOR_PARALLEL_SIZE` | 8 or 16 | GPUs per node for TP (script-dependent) |
 
 ---

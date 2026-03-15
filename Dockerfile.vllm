@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     build-essential \
     cmake \
+    bash \
+    openssh-server \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PyTorch for CUDA 12.1 (compatible with GB10)
@@ -45,6 +48,17 @@ ENV CUDA_LAUNCH_BLOCKING=0
 
 # Create cache directories
 RUN mkdir -p /root/.cache/huggingface
+
+# Configure SSH for container-to-container communication
+RUN mkdir -p /var/run/sshd && \
+    ssh-keygen -A && \
+    echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config && \
+    echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config && \
+    echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config && \
+    echo 'PrintMotd no' >> /etc/ssh/sshd_config && \
+    echo 'PrintLastLog yes' >> /etc/ssh/sshd_config && \
+    mkdir -p /root/.ssh && \
+    chmod 700 /root/.ssh
 
 # Default command (overridden by start_cluster.sh)
 CMD ["bash"]

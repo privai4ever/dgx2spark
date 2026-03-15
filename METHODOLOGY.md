@@ -26,7 +26,7 @@ DGX1 (rank 0)                        DGX2 (rank 1)
 │ tensor_parallel_size │◄──NCCL──────►│ tensor_parallel_size │
 │ = 16 (total)         │   (8 GPUs)   │ = 16 (total)         │
 │                      │              │                      │
-│ API: :30000          │              │ No public API       │
+│ API: :8000          │              │ No public API       │
 │ (OpenAI compatible)  │              │ (compute only)      │
 └─────────────────────┘              └─────────────────────┘
          │                                       │
@@ -187,7 +187,7 @@ python3 -m sglang.launch --model ${MODEL} \
 DGX1: Full model on 8 GPUs           DGX2: Full model on 8 GPUs
 ┌─────────────────────┐              ┌─────────────────────┐
 │ vLLM API server     │              │ vLLM API server     │
-│ port 30000          │              │ port 30000          │
+│ port 8000          │              │ port 8000          │
 │ Full model (8 GPUs) │              │ Full model (8 GPUs) │
 └─────────────────────┘              └─────────────────────┘
          │                                       │
@@ -200,7 +200,7 @@ DGX1: Full model on 8 GPUs           DGX2: Full model on 8 GPUs
 python3 -m vllm.entrypoints.openai.api_server \
   --model ${MODEL} \
   --tensor-parallel-size 8 \   # All GPUs on THIS node
-  --port 30000
+  --port 8000
 ```
 
 **Pros**:
@@ -298,7 +298,7 @@ detect_network_interface() {
 - [ ] HF token set: `export HUGGINGFACE_TOKEN=hf_xxx`
 - [ ] HF cache exists: `ls /home/ss/.cache/huggingface`
 - [ ] Docker running on both nodes: `docker info`
-- [ ] Ports available: `ss -tlnp | grep 30000`
+- [ ] Ports available: `ss -tlnp | grep 8000`
 - [ ] GPU visibility: `nvidia-smi -L` (should show 8 GPUs)
 
 See `start_trtllm_multinode.sh` for built-in pre-flight checks.

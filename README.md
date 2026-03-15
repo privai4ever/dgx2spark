@@ -22,7 +22,7 @@
 ./start_trtllm_multinode.sh --stop
 ```
 
-API endpoint: `http://10.0.0.1:30000/v1/chat/completions`
+API endpoint: `http://10.0.0.1:8000/v1/chat/completions`
 
 ## Documentation
 

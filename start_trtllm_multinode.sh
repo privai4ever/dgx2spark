@@ -11,7 +11,7 @@ set -e
 DGX1_IP="10.0.0.1"
 DGX2_IP="10.0.0.2"
 MODEL="${MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}"
-PORT=30000
+PORT=8000
 MASTER_PORT=29500
 HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}"
 HF_CACHE="/home/ss/.cache/huggingface"
