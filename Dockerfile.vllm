@@ -1,0 +1,50 @@
+# DGX2Spark vLLM ARM64 Image
+# Based on NVIDIA CUDA 12.1 for GB10 (SM121 Blackwell)
+FROM nvcr.io/nvidia/cuda:12.1.1-devel-ubuntu22.04
+
+# Prevent interactive prompts during apt install
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python and dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    build-essential \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install PyTorch for CUDA 12.1 (compatible with GB10)
+# Using versions that support Python 3.12 and ARM64
+RUN pip3 install --no-cache-dir \
+    torch==2.1.2 \
+    torchvision==0.16.2 \
+    torchaudio==2.1.2 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Install vLLM from GitHub (latest multi-node fixes)
+RUN pip3 install --no-cache-dir \
+    "git+https://github.com/vllm-project/vllm.git@main" \
+    flashinfer-python==0.2.0 \
+    --no-deps
+
+# Set useful environment defaults
+ENV HF_HOME=/root/.cache/huggingface
+ENV NCCL_DEBUG=INFO
+ENV NCCL_IB_DISABLE=1
+ENV NCCL_NET_GDR_LEVEL=2
+ENV NCCL_SOCKET_IFNAME=enp1s0f0np0
+ENV GLOO_SOCKET_IFNAME=enp1s0f0np0
+ENV NCCL_P2P_DISABLE=1
+ENV VLLM_LOGGING_LEVEL=INFO
+ENV VLLM_ENABLE_ASYNC_ENGINE=1
+ENV CUDA_LAUNCH_BLOCKING=0
+
+# Create cache directories
+RUN mkdir -p /root/.cache/huggingface
+
+# Default command (overridden by start_cluster.sh)
+CMD ["bash"]

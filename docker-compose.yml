@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  vllm-dgx:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-server-dgx
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - /home/ss/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - HF_HOME=/root/.cache/huggingface
+      # NCCL optimizations for QSFP interconnect
+      - NCCL_DEBUG=INFO
+      - NCCL_IB_DISABLE=1
+      - NCCL_NET_GDR_LEVEL=2
+      - NCCL_SOCKET_IFNAME=enp1s0f0np0
+      - GLOO_SOCKET_IFNAME=enp1s0f0np0
+      - NCCL_P2P_DISABLE=1
+    command: >
+      --model Qwen/Qwen2.5-Coder-7B-Instruct
+      --tensor-parallel-size 8
+      --max-model-len 32768
+      --trust-remote-code
+      --gpu-memory-utilization 0.9
+      --port 30000
