@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # NVIDIA TensorRT-LLM Multi-Node Startup Script for DGX Spark
-# Simplified: Direct launch using environment variables (no SSH entrypoint)
+# Uses trtllm-serve with distributed environment variables
 # Target: Load large models across both DGX nodes
 #
 
@@ -16,9 +16,8 @@ MASTER_PORT=29500
 HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}"
 HF_CACHE="/home/ss/.cache/huggingface"
 
-# Compute settings
-TENSOR_PARALLEL_SIZE=8  # GPUs per node
-WORLD_SIZE=2            # Total nodes
+# Tensor parallelism: total GPUs across cluster
+TENSOR_PARALLEL_SIZE=16  # 8 GPUs per node * 2 nodes
 
 # Colors
 RED='\033[0;31m'
@@ -39,7 +38,7 @@ usage() {
     echo "  --master-port PORT     Master port for distributed (default: 29500)"
     echo "  --stop                 Stop existing containers"
     echo "  --status               Show container status"
-    echo "  --test-single          Test single-node only"
+    echo "  --test-single          Test single-node only (WORLD_SIZE=1)"
     echo "  -h, --help             Show this help"
 }
 
@@ -95,30 +94,36 @@ start_node() {
     local ENV_VARS=(
         "-e HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}"
         "-e HF_HOME=/root/.cache/huggingface"
-        "-e WORLD_SIZE=${WORLD_SIZE}"
-        "-e RANK=${NODE_RANK}"
-        "-e MASTER_ADDR=${DGX1_IP}"
-        "-e MASTER_PORT=${MASTER_PORT}"
         "-e NCCL_DEBUG=INFO"
         "-e NCCL_IB_DISABLE=1"
         "-e NCCL_SOCKET_IFNAME=enp1s0f0np0"
         "-e NCCL_NET_GDR_LEVEL=2"
         "-e NCCL_P2P_DISABLE=1"
     )
+    # Add distributed env if multi-node
+    if [ "$TEST_SINGLE" = false ]; then
+        ENV_VARS+=(
+            "-e WORLD_SIZE=2"
+            "-e RANK=${NODE_RANK}"
+            "-e MASTER_ADDR=${DGX1_IP}"
+            "-e MASTER_PORT=${MASTER_PORT}"
+        )
+    fi
 
     # Build docker run command
-    local CMD="docker run -d --name ${CONTAINER_NAME} --rm --gpus all --network host --ipc host"
+    local CMD="docker run -d --name ${CONTAINER_NAME} --rm --gpus all --network host --ipc host --ulimit memlock=-1 --ulimit stack=67108864"
     for var in "${ENV_VARS[@]}"; do
         CMD="$CMD $var"
     done
     CMD="$CMD -v ${HF_CACHE}:/root/.cache/huggingface"
     CMD="$CMD nvcr.io/nvidia/tensorrt-llm/release:1.2.0rc6"
-    CMD="$CMD python3 -m tensorrt_llm.serve.openai_server"
+    CMD="$CMD trtllm-serve serve"
     CMD="$CMD ${MODEL}"
+    CMD="$CMD --host 0.0.0.0"
+    CMD="$CMD --port ${PORT}"
     CMD="$CMD --tensor_parallel_size ${TENSOR_PARALLEL_SIZE}"
     CMD="$CMD --max_seq_len 32768"
     CMD="$CMD --trust_remote_code"
-    CMD="$CMD --port ${PORT}"
     CMD="$CMD --log_level info"
 
     log_info "Starting TRT-LLM on ${IP} (node rank ${NODE_RANK})..."
@@ -134,8 +139,8 @@ start_cluster() {
     log_info "Model: $MODEL"
     log_info "Master: $DGX1_IP (port $MASTER_PORT)"
     log_info "Slave: $DGX2_IP"
-    log_info "GPUs per node: $TENSOR_PARALLEL_SIZE"
-    log_info "Total nodes: $WORLD_SIZE"
+    log_info "API endpoint: http://${DGX1_IP}:${PORT}/v1/chat/completions"
+    log_info "GPUs per node: 8 (total TP: ${TENSOR_PARALLEL_SIZE})"
     echo ""
 
     # Cleanup
@@ -145,6 +150,13 @@ start_cluster() {
     wait
     sleep 2
     echo ""
+
+    # Check if SSH to DGX2 works
+    if ! ssh -o ConnectTimeout=5 "$DGX2_IP" "echo ok" 2>/dev/null | grep -q ok; then
+        log_warn "Cannot SSH to DGX2 ($DGX2_IP). Multi-node will fail."
+        log_warn "Test single-node only with --test-single"
+        # fall through? maybe abort
+    fi
 
     # Start node 0 on DGX1
     start_node 0 "$DGX1_IP"
