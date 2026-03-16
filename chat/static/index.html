@@ -853,12 +853,14 @@
                                     if (!startTime) startTime = Date.now();
                                     assistantMessage.content += json.token;
                                     tokenCount++;
+                                    saveChats(chats);
                                     renderMessages();
                                 }
 
                                 if (json.stats) {
                                     assistantMessage.stats = `${json.stats.tokens_per_sec} t/s · ${json.stats.time}s · ${json.stats.tokens} tokens`;
                                     lastTps = json.stats.tokens_per_sec;
+                                    saveChats(chats);
                                     updateTpsDisplay();
                                     renderMessages();
                                 }
