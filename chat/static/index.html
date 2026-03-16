@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DGX Spark Chat - Grok Style</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0d0f;
+            color: #e8e8f0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* ========== SIDEBAR ========== */
+        .sidebar {
+            width: 280px;
+            background: #131316;
+            border-right: 1px solid #2a2a2f;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        .sidebar-header {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .new-chat-btn {
+            flex: 1;
+            padding: 10px 16px;
+            background: #00c896;
+            color: #0d0d0f;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .new-chat-btn:hover {
+            background: #00e6a8;
+            transform: translateY(-1px);
+        }
+
+        .chat-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .chat-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #1a1a1f;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-item:hover {
+            background: #252530;
+        }
+
+        .chat-item.active {
+            background: #00c896;
+            color: #0d0d0f;
+        }
+
+        .chat-item-text {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .chat-item-delete {
+            opacity: 0;
+            color: #e8e8f0;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px 8px;
+        }
+
+        .chat-item:hover .chat-item-delete {
+            opacity: 1;
+        }
+
+        /* ========== MAIN CONTENT ========== */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ========== HEADER ========== */
+        .header {
+            background: #131316;
+            border-bottom: 1px solid #2a2a2f;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .model-selector {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        select {
+            background: #1a1a1f;
+            color: #e8e8f0;
+            border: 1px solid #2a2a2f;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        select:hover {
+            background: #252530;
+        }
+
+        .add-model-btn {
+            padding: 8px 12px;
+            background: #1a1a1f;
+            color: #e8e8f0;
+            border: 1px solid #2a2a2f;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .add-model-btn:hover {
+            background: #252530;
+        }
+
+        .status-badge {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.ready {
+            background: #00c896;
+        }
+
+        .status-dot.loading {
+            background: #ffa500;
+        }
+
+        .status-dot.error {
+            background: #ff4444;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .tps-badge {
+            background: #1a1a1f;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #00c896;
+            font-weight: 600;
+        }
+
+        /* ========== DOWNLOAD/LOAD MODAL ========== */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1a1f;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            border: 1px solid #2a2a2f;
+        }
+
+        .modal-content h2 {
+            margin-bottom: 16px;
+            font-size: 18px;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            background: #0d0d0f;
+            color: #e8e8f0;
+            border: 1px solid #2a2a2f;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .modal-buttons button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-download {
+            background: #00c896;
+            color: #0d0d0f;
+        }
+
+        .btn-download:hover {
+            background: #00e6a8;
+        }
+
+        .btn-cancel {
+            background: #2a2a2f;
+            color: #e8e8f0;
+        }
+
+        .btn-cancel:hover {
+            background: #3a3a3f;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #2a2a2f;
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #00c896;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        /* ========== CHAT AREA ========== */
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            display: flex;
+            gap: 12px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            word-wrap: break-word;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .message.user .message-bubble {
+            background: #1e1e24;
+            color: #e8e8f0;
+        }
+
+        .message.assistant .message-bubble {
+            background: #1a1a1f;
+            color: #e8e8f0;
+            position: relative;
+        }
+
+        .message-bubble code {
+            background: #0d0d0f;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .message-bubble pre {
+            background: #0d0d0f;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .message-bubble pre code {
+            padding: 0;
+            background: none;
+        }
+
+        .message-stats {
+            font-size: 11px;
+            color: #666680;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .message:hover .message-actions {
+            opacity: 1;
+        }
+
+        .message-action-btn {
+            background: #2a2a2f;
+            border: none;
+            color: #e8e8f0;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            transition: background 0.2s;
+        }
+
+        .message-action-btn:hover {
+            background: #3a3a3f;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            padding: 12px 16px;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #666680;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% { opacity: 0.3; }
+            30% { opacity: 1; }
+        }
+
+        /* ========== INPUT AREA ========== */
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid #2a2a2f;
+            background: #0d0d0f;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 12px;
+        }
+
+        textarea {
+            flex: 1;
+            padding: 12px;
+            background: #1a1a1f;
+            color: #e8e8f0;
+            border: 1px solid #2a2a2f;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: none;
+            max-height: 120px;
+            line-height: 1.5;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #00c896;
+        }
+
+        .send-btn {
+            padding: 12px 20px;
+            background: #00c896;
+            color: #0d0d0f;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            background: #00e6a8;
+            transform: translateY(-1px);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ========== SCROLLBAR ========== */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #131316;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2a2a2f;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3a3a3f;
+        }
+
+        .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666680;
+            text-align: center;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            opacity: 0.3;
+        }
+
+        .empty-state-text {
+            font-size: 16px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <button class="new-chat-btn" onclick="newChat()">+ New Chat</button>
+            </div>
+            <div class="chat-list" id="chatList"></div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div class="main-content">
+            <!-- HEADER -->
+            <div class="header">
+                <div class="header-left">
+                    <div class="model-selector">
+                        <select id="modelSelect" onchange="switchModel()">
+                            <option value="">Loading models...</option>
+                        </select>
+                        <button class="add-model-btn" onclick="openDownloadModal()">+ Add</button>
+                    </div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot loading" id="statusDot"></div>
+                    <span id="statusText">Loading...</span>
+                    <div class="tps-badge" id="tpsBadge" style="display: none;">
+                        ⚡ <span id="tpsValue">0</span> t/s
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHAT AREA -->
+            <div class="chat-area">
+                <div class="messages" id="messages">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">💬</div>
+                        <div class="empty-state-text">Start a conversation</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- INPUT AREA -->
+            <div class="input-area">
+                <div class="input-container">
+                    <textarea id="input" placeholder="Message..." rows="1"></textarea>
+                    <button class="send-btn" onclick="sendMessage()" id="sendBtn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DOWNLOAD MODAL -->
+    <div class="modal" id="downloadModal">
+        <div class="modal-content">
+            <h2>Add HuggingFace Model</h2>
+            <input type="text" class="modal-input" id="modelInput" placeholder="e.g., nvidia/Qwen3-235B-A22B-FP4">
+            <div class="progress-bar" id="downloadProgress" style="display: none;">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div id="downloadStatus" style="font-size: 12px; margin-top: 8px; color: #666680;"></div>
+            <div class="modal-buttons">
+                <button class="btn-download" id="downloadBtn" onclick="downloadModel()">Download</button>
+                <button class="btn-cancel" onclick="closeDownloadModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+
+        let currentChatId = null;
+        let isGenerating = false;
+        let currentModel = null;
+        let lastTps = 0;
+
+        // ========== CHAT MANAGEMENT ==========
+        function loadChats() {
+            const chats = JSON.parse(localStorage.getItem("chats") || "{}");
+            return chats;
+        }
+
+        function saveChats(chats) {
+            localStorage.setItem("chats", JSON.stringify(chats));
+        }
+
+        function newChat() {
+            const chatId = Date.now().toString();
+            const chats = loadChats();
+            chats[chatId] = { id: chatId, title: "New Chat", messages: [], created: new Date().toISOString() };
+            saveChats(chats);
+            selectChat(chatId);
+            renderChatList();
+        }
+
+        function selectChat(chatId) {
+            currentChatId = chatId;
+            renderMessages();
+            renderChatList();
+        }
+
+        function deleteChat(chatId) {
+            if (!confirm("Delete this chat?")) return;
+            const chats = loadChats();
+            delete chats[chatId];
+            saveChats(chats);
+
+            if (currentChatId === chatId) {
+                const remaining = Object.keys(chats);
+                currentChatId = remaining.length > 0 ? remaining[0] : null;
+            }
+
+            renderChatList();
+            if (currentChatId) {
+                selectChat(currentChatId);
+            } else {
+                document.getElementById("messages").innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div class="empty-state-text">No chats yet</div></div>';
+            }
+        }
+
+        function renderChatList() {
+            const chats = loadChats();
+            const list = document.getElementById("chatList");
+
+            if (Object.keys(chats).length === 0) {
+                list.innerHTML = '<div style="padding: 12px; color: #666680; font-size: 12px;">No chats yet</div>';
+                return;
+            }
+
+            list.innerHTML = Object.values(chats)
+                .sort((a, b) => new Date(b.created) - new Date(a.created))
+                .map(chat => `
+                    <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" onclick="selectChat('${chat.id}')">
+                        <div class="chat-item-text">${chat.title || "Untitled"}</div>
+                        <div class="chat-item-delete" onclick="event.stopPropagation(); deleteChat('${chat.id}')">✕</div>
+                    </div>
+                `).join("");
+        }
+
+        function renderMessages() {
+            const chats = loadChats();
+            const chat = chats[currentChatId];
+            const container = document.getElementById("messages");
+
+            if (!chat || chat.messages.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div class="empty-state-text">Start a conversation</div></div>';
+                return;
+            }
+
+            container.innerHTML = chat.messages.map(msg => {
+                const isUser = msg.role === "user";
+                const html = marked.parse(msg.content);
+                return `
+                    <div class="message ${isUser ? "user" : "assistant"}">
+                        <div class="message-bubble">
+                            ${html}
+                            ${msg.stats ? `<div class="message-stats">${msg.stats}</div>` : ""}
+                            ${isUser ? "" : `
+                                <div class="message-actions">
+                                    <button class="message-action-btn" onclick="copyMessage('${msg.content.replace(/'/g, "\\'")}')">Copy</button>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function copyMessage(text) {
+            navigator.clipboard.writeText(text);
+        }
+
+        // ========== MODEL MANAGEMENT ==========
+        async function loadModels() {
+            try {
+                const resp = await fetch("/api/models");
+                const data = await resp.json();
+
+                const select = document.getElementById("modelSelect");
+                select.innerHTML = data.local_models
+                    .map(model => `<option value="${model}">${model}</option>`)
+                    .join("");
+
+                if (data.loaded_model) {
+                    select.value = data.loaded_model;
+                    currentModel = data.loaded_model;
+                }
+
+                updateStatus(data.api_ready);
+            } catch (e) {
+                console.error("Error loading models:", e);
+                updateStatus(false);
+            }
+        }
+
+        function updateStatus(ready) {
+            const dot = document.getElementById("statusDot");
+            const text = document.getElementById("statusText");
+
+            if (ready) {
+                dot.className = "status-dot ready";
+                text.textContent = "Ready";
+            } else {
+                dot.className = "status-dot error";
+                text.textContent = "Offline";
+            }
+        }
+
+        async function switchModel() {
+            const model = document.getElementById("modelSelect").value;
+            if (!model || model === currentModel) return;
+
+            if (!confirm(`Load model: ${model}?\nThis will restart the TRT-LLM server.`)) {
+                document.getElementById("modelSelect").value = currentModel;
+                return;
+            }
+
+            try {
+                document.getElementById("modelSelect").disabled = true;
+                const resp = await fetch("/api/models/load", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model_id: model })
+                });
+
+                const data = await resp.json();
+                watchModelLoading();
+            } catch (e) {
+                alert("Error loading model: " + e.message);
+                document.getElementById("modelSelect").disabled = false;
+            }
+        }
+
+        async function watchModelLoading() {
+            for (let i = 0; i < 120; i++) {
+                try {
+                    const resp = await fetch("/api/models/loading-status");
+                    const data = await resp.json();
+
+                    if (data.status === "ready") {
+                        currentModel = document.getElementById("modelSelect").value;
+                        document.getElementById("modelSelect").disabled = false;
+                        updateStatus(true);
+                        alert("Model loaded successfully!");
+                        return;
+                    } else if (data.status === "error") {
+                        alert("Error loading model: " + data.error);
+                        document.getElementById("modelSelect").disabled = false;
+                        await loadModels();
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Error checking status:", e);
+                }
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+
+        // ========== CHAT FUNCTIONS ==========
+        async function sendMessage() {
+            const input = document.getElementById("input");
+            const text = input.value.trim();
+
+            if (!text || isGenerating || !currentChatId) return;
+
+            // Add user message
+            const chats = loadChats();
+            const chat = chats[currentChatId];
+            chat.messages.push({ role: "user", content: text });
+
+            // Update title from first message
+            if (chat.messages.length === 1) {
+                chat.title = text.substring(0, 30) + (text.length > 30 ? "..." : "");
+            }
+
+            input.value = "";
+            input.style.height = "auto";
+            isGenerating = true;
+            document.getElementById("sendBtn").disabled = true;
+            renderMessages();
+            renderChatList();
+
+            try {
+                const model = document.getElementById("modelSelect").value;
+                if (!model) {
+                    alert("Please select a model");
+                    return;
+                }
+
+                // Stream response
+                const response = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        messages: chat.messages,
+                        model: model,
+                        max_tokens: 2048
+                    })
+                });
+
+                let assistantMessage = { role: "assistant", content: "", stats: null };
+                chat.messages.push(assistantMessage);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let startTime = null;
+                let tokenCount = 0;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split("\n");
+
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            try {
+                                const json = JSON.parse(line.slice(6));
+
+                                if (json.token) {
+                                    if (!startTime) startTime = Date.now();
+                                    assistantMessage.content += json.token;
+                                    tokenCount++;
+                                    renderMessages();
+                                }
+
+                                if (json.stats) {
+                                    assistantMessage.stats = `${json.stats.tokens_per_sec} t/s · ${json.stats.time}s · ${json.stats.tokens} tokens`;
+                                    lastTps = json.stats.tokens_per_sec;
+                                    updateTpsDisplay();
+                                    renderMessages();
+                                }
+
+                                if (json.error) {
+                                    console.error("Error:", json.error);
+                                }
+                            } catch (e) {
+                                // Ignore parse errors
+                            }
+                        }
+                    }
+                }
+
+                saveChats(chats);
+            } catch (e) {
+                const chats = loadChats();
+                chats[currentChatId].messages.push({ role: "assistant", content: `Error: ${e.message}` });
+                saveChats(chats);
+                renderMessages();
+            } finally {
+                isGenerating = false;
+                document.getElementById("sendBtn").disabled = false;
+            }
+        }
+
+        function updateTpsDisplay() {
+            if (lastTps > 0) {
+                document.getElementById("tpsBadge").style.display = "flex";
+                document.getElementById("tpsValue").textContent = lastTps.toFixed(1);
+            }
+        }
+
+        // ========== DOWNLOAD MODAL ==========
+        function openDownloadModal() {
+            document.getElementById("downloadModal").classList.add("show");
+        }
+
+        function closeDownloadModal() {
+            document.getElementById("downloadModal").classList.remove("show");
+            document.getElementById("modelInput").value = "";
+        }
+
+        async function downloadModel() {
+            const modelId = document.getElementById("modelInput").value.trim();
+            if (!modelId) return;
+
+            try {
+                const resp = await fetch("/api/models/download", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model_id: modelId })
+                });
+
+                const data = await resp.json();
+                watchDownload(data.job_id);
+            } catch (e) {
+                alert("Error: " + e.message);
+            }
+        }
+
+        async function watchDownload(jobId) {
+            document.getElementById("downloadProgress").style.display = "block";
+            document.getElementById("downloadBtn").disabled = true;
+
+            try {
+                const resp = await fetch(`/api/models/download/${jobId}`);
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split("\n");
+
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            try {
+                                const json = JSON.parse(line.slice(6));
+                                const status = json.status;
+                                const progress = json.progress || 0;
+
+                                document.getElementById("progressFill").style.width = progress + "%";
+                                document.getElementById("downloadStatus").textContent = status;
+
+                                if (status === "completed") {
+                                    await loadModels();
+                                    alert("Model downloaded! Select it from the dropdown.");
+                                    closeDownloadModal();
+                                    return;
+                                } else if (status === "error") {
+                                    alert("Download error: " + json.error);
+                                    closeDownloadModal();
+                                    return;
+                                }
+                            } catch (e) {
+                                // Ignore
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                alert("Download error: " + e.message);
+            } finally {
+                document.getElementById("downloadBtn").disabled = false;
+            }
+        }
+
+        // ========== INPUT AUTO-GROW ==========
+        document.getElementById("input").addEventListener("input", function() {
+            this.style.height = "auto";
+            this.style.height = Math.min(this.scrollHeight, 120) + "px";
+        });
+
+        document.getElementById("input").addEventListener("keydown", function(e) {
+            if (e.key === "Enter" && e.ctrlKey) {
+                sendMessage();
+            }
+        });
+
+        // ========== INIT ==========
+        window.addEventListener("load", () => {
+            loadChats();
+            const chats = loadChats();
+            if (Object.keys(chats).length === 0) {
+                newChat();
+            } else {
+                const first = Object.keys(chats)[0];
+                selectChat(first);
+            }
+            loadModels();
+            setInterval(loadModels, 5000);  // Refresh models every 5 sec
+        });
+    </script>
+</body>
+</html>
