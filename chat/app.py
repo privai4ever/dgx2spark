@@ -14,7 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 from typing import Optional, List, Dict
-from fastapi import FastAPI, Request, HTTPException, sse_request_scope
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
