@@ -778,20 +778,36 @@
         let logEventSource = null;
 
         function connectLogs() {
-            if (logEventSource) logEventSource.close();
-            logEventSource = new EventSource("/api/logs");
-            logEventSource.onmessage = (e) => {
+            if (logEventSource) {
                 try {
-                    const data = JSON.parse(e.data);
-                    appendLog(data.log);
-                } catch (err) {
-                    console.error("Failed to parse log:", err);
+                    logEventSource.close();
+                } catch (e) {
+                    // Ignore close errors
                 }
-            };
-            logEventSource.onerror = () => {
-                logEventSource.close();
-                setTimeout(connectLogs, 3000);
-            };
+            }
+            try {
+                logEventSource = new EventSource("/api/logs", { withCredentials: false });
+                logEventSource.onmessage = (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        appendLog(data.log);
+                    } catch (err) {
+                        console.error("Failed to parse log:", err);
+                    }
+                };
+                logEventSource.onerror = () => {
+                    try {
+                        logEventSource.close();
+                    } catch (e) {
+                        // Ignore
+                    }
+                    // Auto-reconnect after 5 seconds
+                    setTimeout(connectLogs, 5000);
+                };
+            } catch (e) {
+                console.error("Failed to connect to logs:", e);
+                setTimeout(connectLogs, 5000);
+            }
         }
 
         function appendLog(line) {
@@ -942,19 +958,28 @@
                 // Capture messages at request time (in case other chats are edited)
                 const messages = chat.messages.slice();
 
+                console.log("Sending chat request with", messages.length, "messages to model", model);
+                console.log("Messages:", messages);
+
+                const payload = {
+                    messages: messages,
+                    model: model,
+                    max_tokens: 2048
+                };
+
+                console.log("Payload:", JSON.stringify(payload));
+
                 // Stream response
                 const response = await fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        messages: messages,
-                        model: model,
-                        max_tokens: 2048
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    const errorText = await response.text();
+                    console.error(`HTTP ${response.status}:`, errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
 
                 // Add empty assistant message and save
