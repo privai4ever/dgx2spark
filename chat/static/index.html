@@ -956,13 +956,14 @@
                 }
 
                 // Capture messages at request time (in case other chats are edited)
-                const messages = chat.messages.slice();
+                // But DON'T include empty assistant messages in the API request
+                const messagesToSend = chat.messages.filter(m => m.content !== "");
 
-                console.log("Sending chat request with", messages.length, "messages to model", model);
-                console.log("Messages:", messages);
+                console.log("Sending chat request with", messagesToSend.length, "messages to model", model);
+                console.log("Messages:", messagesToSend);
 
                 const payload = {
-                    messages: messages,
+                    messages: messagesToSend,
                     model: model,
                     max_tokens: 2048
                 };
