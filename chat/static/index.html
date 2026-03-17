@@ -826,12 +826,17 @@
                     return;
                 }
 
+                // Reload to ensure we have latest messages
+                chats = loadChats();
+                chat = chats[currentChatId];
+
                 // Capture messages at request time (in case other chats are edited)
                 // But DON'T include empty assistant messages in the API request
-                const messagesToSend = chat.messages.filter(m => m.content !== "");
+                const messagesToSend = chat.messages.filter(m => m.role && m.content !== "");
 
                 console.log("Sending chat request with", messagesToSend.length, "messages to model", model);
-                console.log("Messages:", messagesToSend);
+                console.log("All messages:", JSON.stringify(chat.messages));
+                console.log("Filtered messages:", JSON.stringify(messagesToSend));
 
                 const payload = {
                     messages: messagesToSend,
@@ -851,7 +856,8 @@
                 if (!response.ok) {
                     const errorText = await response.text();
                     console.error(`HTTP ${response.status}:`, errorText);
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    console.error("Request was:", JSON.stringify(payload, null, 2));
+                    throw new Error(`API returned ${response.status}. Check console for details.`);
                 }
 
                 // Add empty assistant message and save
