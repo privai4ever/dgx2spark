@@ -77,13 +77,60 @@ There is **no workaround** with TensorRT-LLM 1.0.0rc3. Options:
    - vLLM: Check if vLLM has MiniMax architecture support
    - Ollama: If MiniMax weights available in GGUF format
 
+## Community Context: Wider TRT-LLM Architecture Support Issues
+
+This is **not an isolated issue**. The TensorRT-LLM project has a pattern of architecture-specific incompatibilities:
+
+### Known Similar Issues
+
+- **Falcon Model (FalconForCausalLM):** Reported unsupported in [GitHub Issue #1116](https://github.com/NVIDIA/TensorRT-LLM/issues/1116)
+- **Gemma-3 Loading:** Issues loading Gemma-3 after certain commits affecting model detection ([Issue #6193](https://github.com/NVIDIA/TensorRT-LLM/issues/6193))
+- **Thor/SM101 Support:** Requested but not implemented with INT4/INT8 quantization ([Issue #5594](https://github.com/NVIDIA/TensorRT-LLM/issues/5594))
+- **DGX Spark (SM121) General Issues:** Multiple bugs reported:
+  - FP4 CUTLASS GEMM fails on GB10 due to shared memory overflow from B200-sized configs ([Issue #11368](https://github.com/NVIDIA/TensorRT-LLM/issues/11368))
+  - Multi-node inference stack not ready for GB10/SM121 ([Issue #8474](https://github.com/NVIDIA/TensorRT-LLM/issues/8474))
+
+### NVIDIA's Own Documentation
+
+NVIDIA's [TensorRT-LLM Support Matrix](https://nvidia.github.io/TensorRT-LLM/reference/support-matrix.html) lists model architectures, but version-specific compatibility is not always clear. MiniMax-M2 is mentioned in NVIDIA documentation, but no version/GPU-specific compatibility information is provided.
+
+### The Pattern
+
+1. **Model architectures added gradually** - not all models supported in all versions
+2. **GPU architecture constraints** - SM121 (Blackwell/DGX Spark) has specific limitations
+3. **Version fragmentation** - Support varies between 1.0.0, 1.0.0rc3, 1.2.0rc6, etc.
+4. **Documentation gap** - NVIDIA docs don't clearly specify which models work on which GPU architectures for which versions
+
+### Why DGX Buyers Are Affected
+
+DGX Spark customers purchasing for specific model deployment (e.g., MiniMax, Qwen3-235B) may find:
+- ❌ Models listed in NVIDIA docs as "supported"
+- ❌ But incompatible with available/stable TRT-LLM versions
+- ❌ And alternative frameworks (vLLM) also have SM121 issues
+- ➡️ **Result:** Expensive hardware cannot run desired models efficiently
+
+This creates a **support expectation mismatch** - customers buy DGX Spark for cutting-edge LLM support, but encounter framework limitations not clearly documented upfront.
+
 ## Conclusion
 
 MiniMax-M2.5 is **architecturally incompatible** with TensorRT-LLM 1.0.0rc3. This is not a deployment, networking, or sync issue - it's a framework limitation. The model successfully synced to both DGX1 and DGX2, but TRT-LLM cannot instantiate it.
 
-**Recommendation:** Use Qwen2.5-Coder-7B for production multi-node inference on DGX Spark cluster.
+This reflects a broader issue: TensorRT-LLM's architecture support is fragmented, and DGX Spark users may encounter similar limitations with other MoE or newer models.
+
+**Recommendation:** Use Qwen2.5-Coder-7B for production multi-node inference on DGX Spark cluster. For future purchases, validate model+TRT-LLM version compatibility with NVIDIA support before committing to hardware.
 
 ---
 **Date Tested:** 2026-03-17
 **Environment:** DGX1 + DGX2 (SM121 Blackwell, 200Gbps RoCE)
 **TRT-LLM Version:** 1.0.0rc3 (nvcr.io/nvidia/tensorrt-llm/release:1.0.0rc3)
+
+## References
+
+- [NVIDIA TensorRT-LLM Support Matrix](https://nvidia.github.io/TensorRT-LLM/reference/support-matrix.html)
+- [NVIDIA TensorRT-LLM Documentation](https://docs.nvidia.com/tensorrt-llm/index.html)
+- [GitHub Issue #8474: Can't run GPT-OSS models on DGX Spark](https://github.com/NVIDIA/TensorRT-LLM/issues/8474)
+- [GitHub Issue #11368: FP4 CUTLASS GEMM fails on GB10 (SM121)](https://github.com/NVIDIA/TensorRT-LLM/issues/11368)
+- [GitHub Issue #6193: Can't load gemma3 models](https://github.com/NVIDIA/TensorRT-LLM/issues/6193)
+- [GitHub Issue #5594: Will there be support for the architecture 101?](https://github.com/NVIDIA/TensorRT-LLM/issues/5594)
+- [DGX Spark - TRT LLM for Inference (NVIDIA Build)](https://build.nvidia.com/spark/trt-llm)
+- [vLLM Issue #36821: No sm_121 (Blackwell) support on aarch64](https://github.com/vllm-project/vllm/issues/36821)
