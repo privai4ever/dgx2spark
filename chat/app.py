@@ -91,6 +91,11 @@ async def root():
     """Serve the chat UI."""
     return FileResponse("static/index.html")
 
+@app.get("/favicon.ico")
+async def favicon():
+    """Return a simple favicon to avoid 404."""
+    return {"status": "ok"}
+
 @app.get("/api/models")
 async def list_models():
     """Get local cached models and currently loaded model."""
@@ -364,26 +369,37 @@ async def stream_logs():
     """Stream Docker container logs from TRT-LLM."""
     async def event_generator():
         try:
-            process = await asyncio.create_subprocess_exec(
-                "docker", "logs", "-f", "--tail", "50", "trtllm-multinode",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT
-            )
-            try:
-                while True:
-                    line = await asyncio.wait_for(process.stdout.readline(), timeout=30)
-                    if not line:
-                        break
-                    yield f'data: {json.dumps({"log": line.decode().rstrip()})}\n\n'
-            except asyncio.TimeoutError:
-                yield f'data: {json.dumps({"log": "--- waiting for output ---"})}\n\n'
-            finally:
+            # Get last 100 lines and keep polling for new ones
+            line_count = 0
+            while True:
                 try:
-                    process.kill()
-                except Exception:
-                    pass
+                    # Get logs without -f (no follow), then poll
+                    process = await asyncio.create_subprocess_exec(
+                        "docker", "logs", "--tail", "100", "trtllm-multinode",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+
+                    stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
+
+                    if stdout:
+                        for line in stdout.decode().split('\n'):
+                            if line.strip():
+                                yield f'data: {json.dumps({"log": line.strip()})}\n\n'
+                                line_count += 1
+
+                    # Poll every 2 seconds for new logs
+                    await asyncio.sleep(2)
+
+                except asyncio.TimeoutError:
+                    yield f'data: {json.dumps({"log": "--- polling logs ---"})}\n\n'
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    yield f'data: {json.dumps({"log": f"Log error: {str(e)[:50]}"})}\n\n'
+                    await asyncio.sleep(2)
+
         except Exception as e:
-            yield f'data: {json.dumps({"log": f"Error: {str(e)}"})}\n\n'
+            print(f"Logs stream error: {e}")
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
