@@ -749,7 +749,9 @@
 
             container.innerHTML = chat.messages.map(msg => {
                 const isUser = msg.role === "user";
-                const html = marked.parse(msg.content);
+                const content = msg.content || "";  // Ensure content is never undefined
+                const html = content ? marked.parse(content) : "<em>Generating...</em>";
+                const escapedContent = content.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;");
                 return `
                     <div class="message ${isUser ? "user" : "assistant"}">
                         <div class="message-bubble">
@@ -757,7 +759,7 @@
                             ${msg.stats ? `<div class="message-stats">${msg.stats}</div>` : ""}
                             ${isUser ? "" : `
                                 <div class="message-actions">
-                                    <button class="message-action-btn" onclick="copyMessage('${msg.content.replace(/'/g, "\\'")}')">Copy</button>
+                                    <button class="message-action-btn" onclick="copyMessage('${escapedContent}')">Copy</button>
                                 </div>
                             `}
                         </div>
@@ -911,6 +913,10 @@
             // Add user message
             const chats = loadChats();
             const chat = chats[currentChatId];
+            if (!chat || !chat.messages) {
+                console.error("Chat not found or no messages array", { currentChatId, chat });
+                return;
+            }
             chat.messages.push({ role: "user", content: text });
 
             // Update title from first message
@@ -946,6 +952,8 @@
 
                 let assistantMessage = { role: "assistant", content: "", stats: null };
                 chat.messages.push(assistantMessage);
+                saveChats(chats);  // Save the empty assistant message placeholder
+                renderMessages();  // Show user message + empty assistant bubble
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -968,8 +976,11 @@
                                     if (!startTime) startTime = Date.now();
                                     assistantMessage.content += json.token;
                                     tokenCount++;
+                                    // Throttle rendering: save every token but render every 5 tokens
                                     saveChats(chats);
-                                    renderMessages();
+                                    if (tokenCount % 5 === 0) {
+                                        renderMessages();
+                                    }
                                 }
 
                                 if (json.stats) {
@@ -991,6 +1002,7 @@
                 }
 
                 saveChats(chats);
+                renderMessages();  // Final render to ensure all tokens are visible
             } catch (e) {
                 const chats = loadChats();
                 chats[currentChatId].messages.push({ role: "assistant", content: `Error: ${e.message}` });
