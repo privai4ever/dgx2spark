@@ -963,32 +963,33 @@
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let startTime = null;
+                let buffer = "";
                 let tokenCount = 0;
 
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
 
-                    const text = decoder.decode(value);
-                    const lines = text.split("\n");
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+
+                    // Keep last incomplete line in buffer
+                    buffer = lines.pop() || "";
 
                     for (const line of lines) {
-                        if (line.startsWith("data: ")) {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith("data: ")) {
                             try {
-                                const json = JSON.parse(line.slice(6));
+                                const json = JSON.parse(trimmed.slice(6));
 
                                 if (json.token) {
-                                    if (!startTime) startTime = Date.now();
                                     assistantMessage.content += json.token;
                                     tokenCount++;
 
-                                    // Load fresh and update
-                                    if (tokenCount % 3 === 0) {  // Save/render every 3 tokens
+                                    if (tokenCount % 5 === 0) {
                                         chats = loadChats();
-                                        chat = chats[currentChatId];
-                                        if (chat && chat.messages.length > 0) {
-                                            chat.messages[chat.messages.length - 1].content = assistantMessage.content;
+                                        if (chats[currentChatId] && chats[currentChatId].messages) {
+                                            chats[currentChatId].messages[chats[currentChatId].messages.length - 1] = assistantMessage;
                                             saveChats(chats);
                                             renderMessages();
                                         }
@@ -998,23 +999,34 @@
                                 if (json.stats) {
                                     assistantMessage.stats = `${json.stats.tokens_per_sec} t/s · ${json.stats.time}s · ${json.stats.tokens} tokens`;
                                     lastTps = json.stats.tokens_per_sec;
-                                    chats = loadChats();
-                                    chat = chats[currentChatId];
-                                    if (chat && chat.messages.length > 0) {
-                                        chat.messages[chat.messages.length - 1] = assistantMessage;
-                                        saveChats(chats);
-                                    }
                                     updateTpsDisplay();
-                                    renderMessages();
                                 }
 
                                 if (json.error) {
-                                    console.error("Error:", json.error);
+                                    console.error("API Error:", json.error);
+                                    assistantMessage.content += `\n[Error: ${json.error}]`;
                                 }
                             } catch (e) {
-                                console.error("Parse error:", e);
+                                // Silently skip parse errors
                             }
                         }
+                    }
+                }
+
+                // Handle any remaining buffer
+                if (buffer.trim().startsWith("data: ")) {
+                    try {
+                        const json = JSON.parse(buffer.trim().slice(6));
+                        if (json.token) {
+                            assistantMessage.content += json.token;
+                        }
+                        if (json.stats) {
+                            assistantMessage.stats = `${json.stats.tokens_per_sec} t/s · ${json.stats.time}s · ${json.stats.tokens} tokens`;
+                            lastTps = json.stats.tokens_per_sec;
+                            updateTpsDisplay();
+                        }
+                    } catch (e) {
+                        // Ignore
                     }
                 }
 
