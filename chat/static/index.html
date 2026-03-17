@@ -814,7 +814,7 @@
         }
 
         async function watchModelLoading() {
-            for (let i = 0; i < 120; i++) {
+            for (let i = 0; i < 300; i++) {  // Poll for 5 minutes
                 try {
                     const resp = await fetch("/api/models/loading-status");
                     const data = await resp.json();
@@ -836,6 +836,10 @@
                 }
                 await new Promise(r => setTimeout(r, 1000));
             }
+            // Timeout after 5 minutes
+            alert("Model loading timed out after 5 minutes. Please check if the model is available and try again.");
+            document.getElementById("modelSelect").disabled = false;
+            await loadModels();
         }
 
         // ========== CHAT FUNCTIONS ==========

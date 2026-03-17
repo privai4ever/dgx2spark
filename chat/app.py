@@ -348,13 +348,13 @@ async def perform_model_load(model_id: str):
         model_loading_state = {"status": "waiting_for_api", "progress": 60, "error": None}
 
         # Poll for API readiness
-        for _ in range(120):  # 2 minute timeout
+        for _ in range(300):  # 5 minute timeout (large models need time)
             if await check_api_health():
                 model_loading_state = {"status": "ready", "progress": 100, "error": None}
                 return
             await asyncio.sleep(1)
 
-        model_loading_state = {"status": "error", "progress": 0, "error": "API not ready after 2 minutes"}
+        model_loading_state = {"status": "error", "progress": 0, "error": "API not ready after 5 minutes"}
 
     except Exception as e:
         model_loading_state = {"status": "error", "progress": 0, "error": str(e)[:200]}
