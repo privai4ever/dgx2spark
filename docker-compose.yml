@@ -1,36 +1,55 @@
 version: '3.8'
 
 services:
-  vllm-dgx:
-    image: vllm/vllm-openai:latest
-    container_name: vllm-server-dgx
-    restart: unless-stopped
-    privileged: true
+  chat:
+    build:
+      context: ./chat
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+
+    image: dgx-spark-chat:latest
+    container_name: dgx-spark-chat
+
+    # Network mode: host allows access to localhost:8355 (TRT-LLM API)
     network_mode: host
-    ipc: host
+
+    # Environment variables
+    environment:
+      # TRT-LLM API endpoint (default localhost, can be overridden)
+      - TRT_LLM_API=http://localhost:8355/v1
+      - PYTHONUNBUFFERED=1
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Resource limits (optional, adjust based on system)
     deploy:
       resources:
+        limits:
+          cpus: '4'
+          memory: 2G
         reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    volumes:
-      - /home/ss/.cache/huggingface:/root/.cache/huggingface
-    environment:
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - HF_HOME=/root/.cache/huggingface
-      # NCCL optimizations for QSFP interconnect
-      - NCCL_DEBUG=INFO
-      - NCCL_IB_DISABLE=1
-      - NCCL_NET_GDR_LEVEL=2
-      - NCCL_SOCKET_IFNAME=enp1s0f0np0
-      - GLOO_SOCKET_IFNAME=enp1s0f0np0
-      - NCCL_P2P_DISABLE=1
-    command: >
-      --model Qwen/Qwen2.5-Coder-7B-Instruct
-      --tensor-parallel-size 8
-      --max-model-len 32768
-      --trust-remote-code
-      --gpu-memory-utilization 0.9
-      --port 30000
+          cpus: '2'
+          memory: 1G
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/api/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Labels for easypanel/portainer discovery
+    labels:
+      app: "dgx-spark-chat"
+      version: "1.0"
+      description: "Grok-style Chat UI for TensorRT-LLM"
