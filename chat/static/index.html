@@ -397,6 +397,64 @@
             cursor: pointer;
             padding: 4px 8px;
             border-radius: 4px;
+        }
+
+        /* ========== THINKING MODE ========== */
+        .thinking-block {
+            background: #0d0d0f;
+            border-left: 3px solid #ffa500;
+            padding: 8px 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #888;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+        }
+
+        .thinking-block:hover {
+            background: #151520;
+            border-left-color: #ffb500;
+        }
+
+        .thinking-block.expanded {
+            background: #0d0d0f;
+        }
+
+        .thinking-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+
+        .thinking-toggle {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #ffa500;
+            border-radius: 2px;
+            transition: transform 0.2s;
+        }
+
+        .thinking-block.expanded .thinking-toggle {
+            transform: rotate(90deg);
+        }
+
+        .thinking-content {
+            display: none;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid #2a2a2f;
+            color: #aaa;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .thinking-block.expanded .thinking-content {
+            display: block;
+        }
             font-size: 11px;
             transition: background 0.2s;
         }
@@ -732,6 +790,37 @@
             navigator.clipboard.writeText(text);
         }
 
+        function extractThinkingBlocks(text) {
+            /**
+             * Extract <think>...</think> blocks from response text.
+             * Returns {thinking: string[], content: string}
+             */
+            const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+            const thinking = [];
+            let match;
+
+            while ((match = thinkRegex.exec(text)) !== null) {
+                thinking.push(match[1].trim());
+            }
+
+            const content = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+            return { thinking, content };
+        }
+
+        function renderThinkingBlock(content) {
+            /**Create expandable thinking block HTML*/
+            const escaped = content.substring(0, 100) + (content.length > 100 ? "..." : "");
+            return `
+                <div class="thinking-block" onclick="this.classList.toggle('expanded')">
+                    <div class="thinking-header">
+                        <span class="thinking-toggle"></span>
+                        💭 Thinking
+                    </div>
+                    <div class="thinking-content">${escaped.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+                </div>
+            `;
+        }
+
         // ========== CONTEXT DISPLAY ==========
         function estimateTokens(text) {
             // Rough approximation: ~1 token per 4 characters for English
@@ -1042,8 +1131,34 @@
 
                 // Render markdown now that response is complete
                 window.isStreaming = false;
-                const html = assistantMessage.content ? marked.parse(assistantMessage.content) : "";
-                bubbleDiv.innerHTML = html;
+
+                // Extract and render thinking blocks
+                const { thinking, content } = extractThinkingBlocks(assistantMessage.content);
+                const html = content ? marked.parse(content) : "";
+                bubbleDiv.innerHTML = "";
+
+                // Add thinking blocks if present
+                if (thinking.length > 0) {
+                    for (const thinkContent of thinking) {
+                        const thinkDiv = document.createElement("div");
+                        thinkDiv.innerHTML = renderThinkingBlock(thinkContent);
+                        bubbleDiv.appendChild(thinkDiv.firstChild);
+                    }
+                    if (content) {
+                        const sep = document.createElement("div");
+                        sep.style.height = "1px";
+                        sep.style.background = "#2a2a2f";
+                        sep.style.margin = "8px 0";
+                        bubbleDiv.appendChild(sep);
+                    }
+                }
+
+                // Add main response content
+                if (html) {
+                    const contentDiv = document.createElement("div");
+                    contentDiv.innerHTML = html;
+                    bubbleDiv.appendChild(contentDiv);
+                }
 
                 // Add copy button and stats
                 if (assistantMessage.stats) {
