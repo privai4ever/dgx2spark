@@ -689,38 +689,43 @@
 
             if (!chat || chat.messages.length === 0) {
                 container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div class="empty-state-text">Start a conversation</div></div>';
+                scrollToBottom();
                 return;
             }
 
-            container.innerHTML = chat.messages.map(msg => {
-                const isUser = msg.role === "user";
-                const content = msg.content || "";  // Ensure content is never undefined
-                const html = content ? marked.parse(content) : "<em>Generating...</em>";
-                const escapedContent = content.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;");
-                return `
-                    <div class="message ${isUser ? "user" : "assistant"}">
-                        <div class="message-bubble">
-                            ${html}
-                            ${msg.stats ? `<div class="message-stats">${msg.stats}</div>` : ""}
-                            ${isUser ? "" : `
-                                <div class="message-actions">
-                                    <button class="message-action-btn" onclick="copyMessage('${escapedContent}')">Copy</button>
-                                </div>
-                            `}
+            // Only re-render if completely necessary (new chat or full refresh)
+            // During streaming, we update just the last message
+            if (!window.isStreaming) {
+                container.innerHTML = chat.messages.map(msg => {
+                    const isUser = msg.role === "user";
+                    const content = msg.content || "";
+                    const html = content ? marked.parse(content) : "<em>Generating...</em>";
+                    const escapedContent = content.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                    return `
+                        <div class="message ${isUser ? "user" : "assistant"}">
+                            <div class="message-bubble">
+                                ${html}
+                                ${msg.stats ? `<div class="message-stats">${msg.stats}</div>` : ""}
+                                ${isUser ? "" : `
+                                    <div class="message-actions">
+                                        <button class="message-action-btn" onclick="copyMessage('${escapedContent}')">Copy</button>
+                                    </div>
+                                `}
+                            </div>
                         </div>
-                    </div>
-                `;
-            }).join("");
+                    `;
+                }).join("");
+            }
 
-            // Ensure we scroll to bottom (async to allow DOM update)
             scrollToBottom();
         }
 
         function scrollToBottom() {
             const container = document.getElementById("messages");
-            setTimeout(() => {
+            if (window.scrollReqId) cancelAnimationFrame(window.scrollReqId);
+            window.scrollReqId = requestAnimationFrame(() => {
                 container.scrollTop = container.scrollHeight;
-            }, 0);
+            });
         }
 
         function copyMessage(text) {
@@ -812,20 +817,13 @@
 
         async function switchModel() {
             const model = document.getElementById("modelSelect").value;
-            console.log("switchModel called, selected:", model, "current:", currentModel);
-            if (!model || model === currentModel) {
-                console.log("Returning early - model empty or same as current");
-                return;
-            }
+            if (!model || model === currentModel) return;
 
-            console.log("Showing confirm dialog...");
             if (!confirm(`Load model: ${model}?\nThis will restart the TRT-LLM server.`)) {
-                console.log("User cancelled dialog");
                 document.getElementById("modelSelect").value = currentModel;
                 return;
             }
 
-            console.log("User confirmed, sending to API...");
             try {
                 document.getElementById("modelSelect").disabled = true;
                 const resp = await fetch("/api/models/load", {
@@ -834,15 +832,9 @@
                     body: JSON.stringify({ model_id: model })
                 });
 
-                console.log("API response status:", resp.status);
-                const data = await resp.json();
-                console.log("API response data:", data);
-                // Set pending model so loadModels() doesn't reset it
                 window.pendingModel = model;
-                console.log("Starting watchModelLoading...");
                 watchModelLoading();
             } catch (e) {
-                console.error("Error in switchModel:", e);
                 alert("Error loading model: " + e.message);
                 document.getElementById("modelSelect").disabled = false;
                 window.pendingModel = null;
@@ -850,15 +842,12 @@
         }
 
         async function watchModelLoading() {
-            console.log("watchModelLoading started");
-            for (let i = 0; i < 300; i++) {  // Poll for 5 minutes
+            for (let i = 0; i < 300; i++) {
                 try {
                     const resp = await fetch("/api/models/loading-status");
                     const data = await resp.json();
-                    console.log(`[${i}] Loading status:`, data.status);
 
                     if (data.status === "ready") {
-                        console.log("Model ready!");
                         currentModel = window.pendingModel || document.getElementById("modelSelect").value;
                         document.getElementById("modelSelect").value = currentModel;
                         document.getElementById("modelSelect").disabled = false;
@@ -867,7 +856,6 @@
                         alert("Model loaded successfully!");
                         return;
                     } else if (data.status === "error") {
-                        console.log("Model loading error:", data.error);
                         alert("Error loading model: " + data.error);
                         document.getElementById("modelSelect").disabled = false;
                         window.pendingModel = null;
@@ -875,13 +863,11 @@
                         return;
                     }
                 } catch (e) {
-                    console.error("Error checking status:", e);
+                    // Silently retry
                 }
                 await new Promise(r => setTimeout(r, 1000));
             }
-            // Timeout after 5 minutes
-            console.log("Timeout - model loading took too long");
-            alert("Model loading timed out after 5 minutes. Please check if the model is available and try again.");
+            alert("Model loading timed out after 5 minutes.");
             document.getElementById("modelSelect").disabled = false;
             window.pendingModel = null;
             await loadModels();
@@ -924,22 +910,13 @@
                     return;
                 }
 
-                // Reload to ensure we have latest messages
                 chats = loadChats();
                 chat = chats[currentChatId];
 
-                // Capture messages at request time (in case other chats are edited)
-                // But DON'T include empty assistant messages in the API request
-                // Also strip out "stats" field as API doesn't expect it
                 const messagesToSend = chat.messages
                     .filter(m => m.role && m.content !== "")
                     .map(m => ({ role: m.role, content: m.content }));
 
-                console.log("Sending chat request with", messagesToSend.length, "messages to model", model);
-                console.log("All messages:", JSON.stringify(chat.messages));
-                console.log("Filtered messages:", JSON.stringify(messagesToSend));
-
-                // Show context info
                 showContext(messagesToSend);
 
                 const payload = {
@@ -947,8 +924,6 @@
                     model: model,
                     max_tokens: 2048
                 };
-
-                console.log("Payload:", JSON.stringify(payload));
 
                 // Stream response
                 const response = await fetch("/api/chat", {
@@ -959,34 +934,49 @@
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    console.error(`HTTP ${response.status}:`, errorText);
-                    console.error("Request was:", JSON.stringify(payload, null, 2));
-                    throw new Error(`API returned ${response.status}. Check console for details.`);
+                    throw new Error(`API returned ${response.status}`);
                 }
 
-                // Add empty assistant message and save
-                chats = loadChats();  // Reload in case other chats changed
+                // Add empty assistant message and create DOM element for streaming
+                chats = loadChats();
                 chat = chats[currentChatId];
                 let assistantMessage = { role: "assistant", content: "", stats: null };
                 chat.messages.push(assistantMessage);
                 saveChats(chats);
-                renderMessages();
+
+                // Create message bubble in DOM
+                const container = document.getElementById("messages");
+                const msgDiv = document.createElement("div");
+                msgDiv.className = "message assistant";
+                const bubbleDiv = document.createElement("div");
+                bubbleDiv.className = "message-bubble";
+                const contentDiv = document.createElement("div");
+                contentDiv.style.whiteSpace = "pre-wrap";
+                contentDiv.style.wordBreak = "break-word";
+                bubbleDiv.appendChild(contentDiv);
+                msgDiv.appendChild(bubbleDiv);
+
+                // Remove empty state if needed
+                if (container.querySelector(".empty-state")) {
+                    container.innerHTML = "";
+                }
+
+                container.appendChild(msgDiv);
+                window.isStreaming = true;
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = "";
                 let tokenCount = 0;
+                let lastSave = 0;
 
                 while (true) {
                     const { done, value } = await reader.read();
-
-                    // On last chunk, don't use stream mode to flush any remaining bytes
                     buffer += decoder.decode(value, { stream: !done });
 
                     if (done) break;
 
                     const lines = buffer.split("\n");
-                    // Keep last incomplete line in buffer
                     buffer = lines.pop() || "";
 
                     for (const line of lines) {
@@ -997,14 +987,17 @@
 
                                 if (json.token) {
                                     assistantMessage.content += json.token;
+                                    contentDiv.textContent = assistantMessage.content;
                                     tokenCount++;
+                                    scrollToBottom();
 
-                                    if (tokenCount % 5 === 0) {
+                                    // Save chat less frequently (every 20 tokens)
+                                    if (tokenCount - lastSave >= 20) {
                                         chats = loadChats();
-                                        if (chats[currentChatId] && chats[currentChatId].messages) {
+                                        if (chats[currentChatId]) {
                                             chats[currentChatId].messages[chats[currentChatId].messages.length - 1] = assistantMessage;
                                             saveChats(chats);
-                                            renderMessages();
+                                            lastSave = tokenCount;
                                         }
                                     }
                                 }
@@ -1016,8 +1009,8 @@
                                 }
 
                                 if (json.error) {
-                                    console.error("API Error:", json.error);
                                     assistantMessage.content += `\n[Error: ${json.error}]`;
+                                    contentDiv.textContent = assistantMessage.content;
                                 }
                             } catch (e) {
                                 // Silently skip parse errors
@@ -1026,7 +1019,7 @@
                     }
                 }
 
-                // Handle any remaining buffer
+                // Handle remaining buffer
                 if (buffer.trim()) {
                     const trimmed = buffer.trim();
                     if (trimmed.startsWith("data: ")) {
@@ -1034,6 +1027,7 @@
                             const json = JSON.parse(trimmed.slice(6));
                             if (json.token) {
                                 assistantMessage.content += json.token;
+                                contentDiv.textContent = assistantMessage.content;
                             }
                             if (json.stats) {
                                 assistantMessage.stats = `${json.stats.tokens_per_sec} t/s · ${json.stats.time}s · ${json.stats.tokens} tokens`;
@@ -1046,6 +1040,24 @@
                     }
                 }
 
+                // Render markdown now that response is complete
+                window.isStreaming = false;
+                const html = assistantMessage.content ? marked.parse(assistantMessage.content) : "";
+                bubbleDiv.innerHTML = html;
+
+                // Add copy button and stats
+                if (assistantMessage.stats) {
+                    const statsDiv = document.createElement("div");
+                    statsDiv.className = "message-stats";
+                    statsDiv.textContent = assistantMessage.stats;
+                    bubbleDiv.appendChild(statsDiv);
+                }
+
+                const actionsDiv = document.createElement("div");
+                actionsDiv.className = "message-actions";
+                actionsDiv.innerHTML = `<button class="message-action-btn" onclick="copyMessage('${assistantMessage.content.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">Copy</button>`;
+                bubbleDiv.appendChild(actionsDiv);
+
                 // Final save
                 chats = loadChats();
                 chat = chats[currentChatId];
@@ -1053,7 +1065,7 @@
                     chat.messages[chat.messages.length - 1] = assistantMessage;
                     saveChats(chats);
                 }
-                renderMessages();
+                scrollToBottom();
             } catch (e) {
                 console.error("Chat error:", e);
                 chats = loadChats();

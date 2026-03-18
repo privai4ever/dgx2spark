@@ -30,6 +30,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Connection pool for reuse
+http_session = None
+
+async def get_http_session():
+    """Get or create persistent HTTP session."""
+    global http_session
+    if http_session is None:
+        connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
+        http_session = aiohttp.ClientSession(connector=connector)
+    return http_session
+
 # Serve static files (HTML/CSS/JS)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -149,27 +160,30 @@ async def chat_stream(request: Request):
             token_count = 0
 
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{TRT_LLM_API}/chat/completions",
-                        json=payload,
-                        timeout=aiohttp.ClientTimeout(total=300)
-                    ) as resp:
-                        if resp.status != 200:
-                            yield f'data: {{"error": "API error: {resp.status}"}}\n\n'
-                            return
+                session = await get_http_session()
+                async with session.post(
+                    f"{TRT_LLM_API}/chat/completions",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=300)
+                ) as resp:
+                    if resp.status != 200:
+                        yield f'data: {{"error": "API error: {resp.status}"}}\n\n'
+                        return
 
-                        async for line in resp.content.iter_any():
-                            if not line:
+                    buffer = ""
+                    async for chunk in resp.content.iter_chunked(4096):
+                        buffer += chunk.decode('utf-8', errors='ignore')
+                        lines = buffer.split('\n')
+                        buffer = lines[-1]  # Keep incomplete line
+
+                        for line in lines[:-1]:
+                            if not line.strip():
                                 continue
 
-                            line_str = line.decode() if isinstance(line, bytes) else line
-
-                            if line_str.startswith("data: "):
+                            if line.startswith("data: "):
                                 try:
-                                    data_str = line_str[6:].strip()
+                                    data_str = line[6:].strip()
                                     if data_str == "[DONE]":
-                                        # End of stream, send stats
                                         elapsed = time.time() - start_time
                                         tps = token_count / elapsed if elapsed > 0 else 0
                                         stats = {
@@ -188,9 +202,22 @@ async def chat_stream(request: Request):
 
                                         if content:
                                             token_count += 1
-                                            yield f'data: {{"token": {json.dumps(content)}}}\n\n'
-                                except json.JSONDecodeError:
+                                            # Optimize JSON output - minimal escaping
+                                            escaped = content.replace('\\', '\\\\').replace('"', '\\"')
+                                            yield f'data: {{"token": "{escaped}"}}\n\n'
+                                except (json.JSONDecodeError, KeyError, IndexError):
                                     pass
+
+                    # Process any remaining buffer
+                    if buffer.startswith("data: "):
+                        try:
+                            data_str = buffer[6:].strip()
+                            if data_str == "[DONE]":
+                                elapsed = time.time() - start_time
+                                tps = token_count / elapsed if elapsed > 0 else 0
+                                yield f'data: {{"stats": {{"tokens": {token_count}, "time": {round(elapsed, 2)}, "tokens_per_sec": {round(tps, 1)}}}}}\n\n'
+                        except:
+                            pass
 
             except asyncio.TimeoutError:
                 yield f'data: {{"error": "Request timeout"}}\n\n'
