@@ -1,47 +1,40 @@
-# DGX Spark Inference Benchmark Suite
+# DGX Spark Cluster Inference Benchmark Suite
 
-This directory contains a collection of startup scripts for benchmarking different inference frameworks and configurations on the DGX Spark cluster (2x GB10 nodes).
+This directory contains startup scripts for benchmarking large language model inference on a **two-node DGX Spark cluster** (10.0.0.1 and 10.0.0.2).
 
-## Overview
+**Focus:** Multi-node distributed inference only (single-node is not interesting)
 
-| Framework | Config | Status | Notes |
-|-----------|--------|--------|-------|
-| **vLLM** | Single-node | ✅ Ready | Recommended starting point |
-| **vLLM** | Multi-node (Ray) | ⚠️ Experimental | Works but watch for GB10 crashes |
-| **SGLang** | Single-node | ✅ Ready | Good alternative to vLLM |
-| **TRT-LLM** | Multi-node (mpirun) | ⚠️ Known unstable | See `../FINAL_SOLUTION.md` |
+## Cluster Setups
+
+| Framework | Approach | Status | Purpose |
+|-----------|----------|--------|---------|
+| **vLLM Ray** | Hybrid TP=4/PP=2 | ✅ Recommended | Stable, reduced inter-node traffic |
+| **TRT-LLM mpirun** | Pure TP=8 | ⚠️ Risky | Maximum performance (may crash) |
+| **SGLang** | (Coming soon) | 🔄 WIP | Alternative to vLLM |
 
 ---
 
 ## Quick Start
 
-### 1. Single-Node (Easiest)
-
-**vLLM:**
-```bash
-cd benchmarks/vllm
-chmod +x start_nemotron_single_node.sh
-./start_nemotron_single_node.sh
-```
-
-**SGLang:**
-```bash
-cd benchmarks/sglang
-chmod +x start_nemotron_single_node.sh
-./start_nemotron_single_node.sh
-```
-
-Both will start on ports 8001 (vLLM) and 8003 (SGLang).
-
-### 2. Multi-Node (Experimental)
+### Recommended: vLLM with Hybrid TP+PP
 
 ```bash
 cd benchmarks/vllm
-chmod +x start_nemotron_multinode.sh
-./start_nemotron_multinode.sh
+chmod +x start_nemotron_cluster_tp4pp2.sh
+./start_nemotron_cluster_tp4pp2.sh
 ```
 
-⚠️ **Warning:** This uses Ray to distribute across nodes. May encounter GB10 memory/NCCL issues.
+**Why:** Reduces inter-node communication by 75%, more stable on GB10.
+
+### Aggressive: TRT-LLM with Pure Tensor Parallelism
+
+```bash
+cd benchmarks/trtllm
+chmod +x start_nemotron_cluster_tp8.sh
+./start_nemotron_cluster_tp8.sh
+```
+
+**Why:** Maximum performance, but known to crash on GB10 under load.
 
 ---
 
